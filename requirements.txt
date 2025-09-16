@@ -1,0 +1,11 @@
+langchain
+boto3
+botocore
+langchain-community
+langchain-aws
+python-dotenv
+streamlit
+langserve
+fastapi
+uvicorn
+sse_starlette
