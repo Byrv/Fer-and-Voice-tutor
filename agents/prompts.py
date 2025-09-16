@@ -168,7 +168,6 @@ def main():
     # Tutor setup
     tutor = SlowTutor(
         llm=claude_llm,
-        rag_memory=rag_memory,
         language_instruction=language_instruction,
         age_instruction=age_instruction,
         state=state,

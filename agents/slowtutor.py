@@ -8,7 +8,7 @@ import threading
 import logging
 from polly import PollySpeaker 
 from langchain.memory import ConversationBufferMemory
-
+from datetime import datetime
 logging.basicConfig(
     level=logging.INFO,
     format="🧠 [%(asctime)s] %(message)s",
@@ -138,6 +138,159 @@ def human_prompt_solution(question: str, context_block: str, child_reply: Option
         "If the child's attempt is correct, praise and confirm briefly first; "
         "if not, gently correct, then show the solution."
     )
+
+
+def _to_text(resp) -> str:
+    """
+    Convert a variety of LangChain/LLM return objects into a plain string.
+
+    Handles:
+      - str
+      - AIMessage / BaseMessage (anything with .content)
+      - ChatResult (resp.generations[0][0].message.content)
+      - LLMResult (resp.generations[0][0].text or .message.content)
+      - dicts with 'content'/'text'/'output_text'
+      - lists/tuples of generations/messages (takes the first)
+      - falls back to str(resp) as a last resort
+    """
+    if resp is None:
+        return ""
+
+    # 1) plain string
+    if isinstance(resp, str):
+        return resp
+
+    # 2) anything with a .content attr (AIMessage/BaseMessage/etc.)
+    content = getattr(resp, "content", None)
+    if isinstance(content, str):
+        return content
+
+    # 3) ChatResult (LangChain)
+    try:
+        # Late import in case LC isn't present in every environment
+        from langchain_core.outputs import ChatResult
+        if isinstance(resp, ChatResult):
+            # Usually: generations: List[List[ChatGeneration]]
+            gen = resp.generations[0][0]
+            msg = getattr(gen, "message", None)
+            if msg and getattr(msg, "content", None):
+                return msg.content
+    except Exception:
+        pass
+
+    # 4) LLMResult (LangChain, for text LLMs)
+    try:
+        from langchain_core.outputs import LLMResult
+        if isinstance(resp, LLMResult):
+            # Usually: generations: List[List[Generation]]
+            gen = resp.generations[0][0]
+            # Prefer .text if present, fallback to message.content
+            text = getattr(gen, "text", None)
+            if isinstance(text, str) and text.strip():
+                return text
+            msg = getattr(gen, "message", None)
+            if msg and getattr(msg, "content", None):
+                return msg.content
+    except Exception:
+        pass
+
+    # 5) dict-like payloads
+    if isinstance(resp, dict):
+        for k in ("content", "text", "output_text"):
+            if k in resp:
+                v = resp[k]
+                return v if isinstance(v, str) else str(v)
+
+    # 6) sequences (generations/messages/chunks)
+    if isinstance(resp, (list, tuple)) and len(resp) > 0:
+        try:
+            return _to_text(resp[0])
+        except Exception:
+            return str(resp[0])
+
+    # 7) final fallback
+    return str(resp)
+
+
+
+def context_block(self) -> str:
+    """
+    Build a compact, always-safe-to-insert 'context' string for prompts.
+    It reflects:
+      - current emotion/FER state from self.state
+      - tutor configuration (slow_mode, max_hints)
+      - learner profile (if available)
+      - last few turns of dialogue (truncated)
+
+    Returns:
+        str: Multi-line string suitable for inclusion in system/user prompts.
+    """
+    # ---- Pull history safely ----
+    try:
+        history = self.memory.load_memory_variables({}).get("history", []) or []
+    except Exception:
+        history = []
+
+    # ---- Utility: format a single message line ----
+    def _msg_to_line(m) -> str:
+        role = getattr(m, "type", None) or getattr(m, "role", None) or m.__class__.__name__
+        content = getattr(m, "content", None)
+        if content is None:
+            content = str(m)
+        content = str(content)
+        max_len = 240  # keep context tight
+        if len(content) > max_len:
+            content = content[:max_len] + "…"
+        return f"{role}: {content}"
+
+    # ---- Recent dialogue block ----
+    # Adjust the slice if you want more/less history in the context
+    recent_lines = [_msg_to_line(m) for m in history[-6:]]
+    recent_dialogue = "\n".join(recent_lines) if recent_lines else "None"
+
+    # ---- State (emotion / FER) ----
+    state = getattr(self, "state", {}) or {}
+    emotion = (
+        state.get("emotion")
+        or state.get("current_emotion")
+        or "neutral"
+    )
+    fer_on = bool(state.get("fer", state.get("emotion_monitor_on", False)))
+    emo_conf = state.get("emotion_confidence", None)
+    last_emo_at = state.get("last_update_ts", None)
+
+    # ---- Tutor config ----
+    slow_mode = bool(getattr(self, "slow_mode", False))
+    max_hints = int(getattr(self, "max_hints", 3))
+
+    # ---- Learner profile (optional) ----
+    learner = getattr(self, "learner_profile", {}) or {}
+    learner_kvs = ", ".join(
+        f"{k}: {v}"
+        for k, v in learner.items()
+        if v not in (None, "", [])
+    )
+    learner_str = f"{{{learner_kvs}}}" if learner_kvs else "None"
+
+    # ---- Timestamp ----
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    # ---- Build the block ----
+    lines = [
+        "### Context",
+        f"timestamp: {now_iso}",
+        f"slow_mode: {slow_mode}",
+        f"max_hints: {max_hints}",
+        f"FER_active: {fer_on}",
+        "current_emotion: "
+        + (f"{emotion} (p={emo_conf:.2f})" if isinstance(emo_conf, (int, float)) else f"{emotion}"),
+        f"last_emotion_update: {last_emo_at}" if last_emo_at else "last_emotion_update: unknown",
+        f"learner_profile: {learner_str}",
+        "recent_dialogue:",
+        recent_dialogue,
+    ]
+    return "\n".join(lines)
+
 
 def confusion_prompt(raw_question: str, context_block: str) -> str:
     return (
