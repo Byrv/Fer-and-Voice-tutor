@@ -95,8 +95,12 @@ st.markdown("<div style='height:100px'></div>", unsafe_allow_html=True)
 
 # Ask for webcam permission and start detection
 #st.markdown("### 🎥 Enable Webcam for Emotion Detection")
-#webrtc_streamer(key="emotion-detect", video_transformer_factory=EmotionDetector)
-
+#webrtc_streamer(
+#    key="emotion-detect",
+#    video_transformer_factory=EmotionDetector,
+#    media_stream_constraints={"video": True, "audio": False},  # No audio
+#    async_transform=True
+#)
 
 # First-time launch questions (must be filled and sent to backend)
 if "user_location" not in st.session_state or "user_age" not in st.session_state:
