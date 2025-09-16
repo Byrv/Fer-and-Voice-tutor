@@ -12,7 +12,7 @@ from utils import synthesize_speech, send_to_backend
 st.set_page_config(page_title="Noodle Crew", layout="centered")
 
 # Custom CSS for chat layout
-with open("frontend/styles.css") as f:
+with open("frontend/style.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 # Header

@@ -8,7 +8,7 @@ import boto3
 import json
 from langserve import add_routes
 import uvicorn
-from chains import claude_chain, llama_chain
+from backend.chains import claude_chain, llama_chain
 
 
 app = FastAPI(
