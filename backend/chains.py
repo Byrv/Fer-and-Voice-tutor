@@ -10,7 +10,7 @@ import os
 import logging
 
 # Load environment variables from .env file
-env_path = os.path.join("..", ".env")
+env_path = os.path.join(".env")
 load_dotenv(dotenv_path=env_path)
 print(env_path)
 
