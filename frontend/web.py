@@ -1,11 +1,38 @@
 import streamlit as st
 import speech_recognition as sr
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import cv2
 import tempfile
 import os
 import time
 from datetime import datetime
 
 from utils import synthesize_speech, send_to_backend
+
+
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import cv2
+
+# Dummy emotion classifier (replace with real model later)
+def classify_emotion(face_img):
+    # Placeholder logic: always return "Neutral"
+    return "Neutral"
+
+# Emotion detection transformer
+class EmotionDetector(VideoTransformerBase):
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+
+        for (x, y, w, h) in faces:
+            face_img = img[y:y+h, x:x+w]
+            emotion = classify_emotion(face_img)
+            cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
+            cv2.putText(img, emotion, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+        return img
 
 
 # Page config
@@ -65,6 +92,38 @@ if chat_pairs and "last_audio_path" in st.session_state:
 # Spacer to push input to bottom
 st.markdown("<div style='height:100px'></div>", unsafe_allow_html=True)
 
+
+# Ask for webcam permission and start detection
+#st.markdown("### 🎥 Enable Webcam for Emotion Detection")
+#webrtc_streamer(key="emotion-detect", video_transformer_factory=EmotionDetector)
+
+
+# First-time launch questions (must be filled and sent to backend)
+if "user_location" not in st.session_state or "user_age" not in st.session_state:
+    st.markdown("### 👋 Welcome! Let's get to know you a bit.")
+
+    location = st.text_input("🌍 Where do you live (e.g., India, USA, UK)?")
+    age = st.text_input("🎂 How old are you?")
+
+    # Validate non-empty and correct type
+    if isinstance(location, str) and location.strip() and isinstance(age, str) and age.strip():
+        st.session_state.user_location = location.strip()
+        st.session_state.user_age = age.strip()
+        try:
+            backend_response = send_to_backend(st.session_state.user_location)
+            time.sleep(1)
+            backend_response = send_to_backend(st.session_state.user_age)
+            st.success("✅ Thanks! You're all set.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Failed to send info to server: {e}")
+        st.rerun()
+
+    else:
+        st.warning("⚠️ Please fill in both fields to continue.")
+        st.stop()
+
+
 # Input section at the bottom
 with st.container():
     col1, col2, col3 = st.columns([6, 1, 1])
@@ -118,7 +177,6 @@ if send_clicked and user_input:
     st.session_state.chat_history.append({"role": "user", "text": user_input, "time": timestamp})
     with st.spinner("Thinking..."):
         response = send_to_backend(user_input)
-        #print(f'Bot response: {response}')
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.chat_history.append({"role": "bot", "text": response, "time": timestamp})
 

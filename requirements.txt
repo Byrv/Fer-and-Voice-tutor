@@ -29,3 +29,5 @@ torch
 transformers
 threadpoolctl
 mediapipe
+streamlit-webrtc
+opencv-python-headless
